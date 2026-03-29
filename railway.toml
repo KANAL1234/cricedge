@@ -1,0 +1,55 @@
+[build]
+builder = "dockerfile"
+
+[[services]]
+name = "backend"
+source = "backend"
+dockerfilePath = "Dockerfile.prod"
+
+[services.deploy]
+# socket_app wraps FastAPI with Socket.io — must reference socket_app
+startCommand = "uvicorn app.main:socket_app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[services.variables]
+PORT = "8000"
+APP_ENV = "production"
+
+[[services]]
+name = "frontend"
+source = "frontend"
+dockerfilePath = "Dockerfile.prod"
+
+[services.deploy]
+startCommand = "node server.js"
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[services.variables]
+PORT = "3000"
+NODE_ENV = "production"
+
+[[services]]
+name = "worker"
+source = "backend"
+dockerfilePath = "Dockerfile.prod"
+
+[services.deploy]
+startCommand = "celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[[services]]
+name = "beat"
+source = "backend"
+dockerfilePath = "Dockerfile.prod"
+
+[services.deploy]
+startCommand = "celery -A app.tasks.celery_app beat --loglevel=info"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
