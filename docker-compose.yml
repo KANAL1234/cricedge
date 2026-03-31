@@ -1,12 +1,9 @@
-version: "3.9"
-
 # Port assignments (non-conflicting with existing VPS services):
 #   postgres  → 127.0.0.1:5433   (5432 used by host)
 #   redis     → 127.0.0.1:6380   (6379 used by host)
 #   backend   → 127.0.0.1:8100
 #   frontend  → 127.0.0.1:3020
 # Host nginx (cricedge.veraxiss.me) proxies to these directly.
-# The internal nginx container is removed — host nginx handles routing.
 
 services:
   postgres:
@@ -24,6 +21,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -36,6 +34,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   backend:
     build:
@@ -58,13 +57,14 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:socket_app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:socket_app --host 0.0.0.0 --port 8000 --workers 2
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
 
   celery:
     build:
@@ -85,6 +85,7 @@ services:
     volumes:
       - ./backend:/app
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    restart: unless-stopped
 
   celery-beat:
     build:
@@ -102,20 +103,19 @@ services:
     volumes:
       - ./backend:/app
     command: celery -A app.tasks.celery_app beat --loglevel=info
+    restart: unless-stopped
 
   frontend:
-    image: node:20-alpine
-    working_dir: /app
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
     ports:
       - "127.0.0.1:3020:3000"
     env_file:
       - ./frontend/.env
     environment:
       NEXT_PUBLIC_API_URL: https://cricedge.veraxiss.me
-    volumes:
-      - ./frontend:/app
-      - frontend_node_modules:/app/node_modules
-    command: sh -c "npm install && npm run dev"
+      NODE_ENV: production
     depends_on:
       backend:
         condition: service_healthy
@@ -124,9 +124,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
-  frontend_node_modules:
