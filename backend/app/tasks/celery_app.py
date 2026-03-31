@@ -36,12 +36,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour="0", minute="30"),
     },
 
-    # Playing XI check: every 5 minutes between 8:30 AM–3:30 PM UTC
-    # (2:00 PM–9:00 PM IST — match window)
+    # Playing XI check: every 5 minutes between 8:30 AM–5:30 PM UTC
+    # (2:00 PM–11:00 PM IST — covers both afternoon & evening IPL matches)
     # Burns 0 calls if XI already confirmed for the day's match
     "sync-match-xi": {
         "task": "app.tasks.scrape_tasks.sync_match_xi_task",
-        "schedule": crontab(minute="*/5", hour="8-15"),
+        "schedule": crontab(minute="*/5", hour="8-17"),
     },
 
     # Match results: every 5 min during match hours (cached 10 min — ~1 real call/10 min)

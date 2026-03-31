@@ -17,9 +17,20 @@ import getSocket from "@/lib/socket";
 import { useMatchStore, useUIStore, usePlayerStore } from "@/lib/store";
 import WeatherWidget from "@/components/WeatherWidget";
 import { SkeletonRow } from "@/components/Skeleton";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const cn = (...args: any[]) => twMerge(clsx(args));
-const toArr = (v: any): string[] => (Array.isArray(v) ? v : []);
+const toArr = (v: any): any[] => (Array.isArray(v) ? v : []);
+
+// Normalize XI entry — API returns either a UUID string or enriched {id, name, short_name, role}
+type XIPlayer = { id: string; name: string | null; short_name: string | null; role: string | null };
+function normalizeXI(xi: any[]): XIPlayer[] {
+  return xi.map((item) =>
+    typeof item === "string"
+      ? { id: item, name: null, short_name: null, role: null }
+      : { id: item.id, name: item.name ?? null, short_name: item.short_name ?? null, role: item.role ?? null }
+  );
+}
 
 function toIST(utcStr: string) {
   return new Date(utcStr).toLocaleString("en-IN", {
@@ -158,13 +169,14 @@ export default function MatchPage() {
     };
   }, [id, markXIConfirmed, matchSWRKey]);
 
-  // Pre-fetch player names for ownership list
+  // Pre-fetch player names for ownership list + XI players
   useEffect(() => {
-    if (!ownershipData?.predictions) return;
-    ownershipData.predictions.forEach((p: any) => {
-      if (!players[p.player_id]) fetchPlayer(p.player_id);
-    });
-  }, [ownershipData, players, fetchPlayer]);
+    const ids: string[] = [];
+    ownershipData?.predictions?.forEach((p: any) => { if (p.player_id) ids.push(p.player_id); });
+    normalizeXI(toArr(match?.playing_xi_team1)).forEach((p) => { if (p.id && !p.name) ids.push(p.id); });
+    normalizeXI(toArr(match?.playing_xi_team2)).forEach((p) => { if (p.id && !p.name) ids.push(p.id); });
+    ids.forEach((id) => { if (!players[id]) fetchPlayer(id); });
+  }, [ownershipData, match?.playing_xi_team1, match?.playing_xi_team2, players, fetchPlayer]);
 
   // Pre-fetch captain player names
   useEffect(() => {
@@ -212,24 +224,26 @@ export default function MatchPage() {
   const differentials: any[] = diffData?.differentials ?? [];
 
   // Combine playing XI with ownership for table
-  const allPlayerIds = [
-    ...toArr(match.playing_xi_team1),
-    ...toArr(match.playing_xi_team2),
+  const xiPlayers = [
+    ...normalizeXI(toArr(match.playing_xi_team1)),
+    ...normalizeXI(toArr(match.playing_xi_team2)),
   ];
+  // Build a name lookup from enriched XI data so we don't need per-player fetches
+  const xiNameMap: Record<string, XIPlayer> = Object.fromEntries(xiPlayers.map((p) => [p.id, p]));
 
   const ownershipMap = Object.fromEntries(
     ownership.map((p: any) => [p.player_id, p])
   );
 
   // If XI not available, fall back to ownership predictions list (squad-based for completed matches)
-  let tableRows = allPlayerIds.length > 0
-    ? allPlayerIds.map((pid: string) => {
-        const own = ownershipMap[pid];
+  let tableRows = xiPlayers.length > 0
+    ? xiPlayers.map((xp) => {
+        const own = ownershipMap[xp.id];
         return {
-          player_id: pid,
-          name: own?.name ?? players[pid]?.name ?? pid.slice(0, 8) + "…",
-          role: own?.role ?? players[pid]?.role ?? "?",
-          dream11_price: own?.dream11_price ?? players[pid]?.dream11_price ?? 0,
+          player_id: xp.id,
+          name: own?.name ?? xp.name ?? players[xp.id]?.name ?? xp.id.slice(0, 8) + "…",
+          role: own?.role ?? xp.role ?? players[xp.id]?.role ?? "?",
+          dream11_price: own?.dream11_price ?? players[xp.id]?.dream11_price ?? 0,
           ...own,
         };
       })
@@ -274,6 +288,7 @@ export default function MatchPage() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="max-w-screen-xl mx-auto px-4 py-4 space-y-6">
       {/* Back */}
       <button
@@ -407,7 +422,7 @@ export default function MatchPage() {
                   XI drops ~30 min before match start
                 </div>
               </div>
-            ) : isCompleted && toArr(match.playing_xi_team1).length === 0 ? (
+            ) : isCompleted && normalizeXI(toArr(match.playing_xi_team1)).length === 0 ? (
               <div className="text-center py-6">
                 <div className="font-mono text-muted text-xs">XI data not captured for this match</div>
               </div>
@@ -419,14 +434,14 @@ export default function MatchPage() {
                     {match.team1_short}
                   </div>
                   <div className="space-y-1">
-                    {toArr(match.playing_xi_team1).map((pid: string) => (
-                      <div key={pid} className="flex items-center gap-1.5">
-                        <RoleBadge role={players[pid]?.role ?? "BAT"} />
+                    {normalizeXI(toArr(match.playing_xi_team1)).map((xp) => (
+                      <div key={xp.id} className="flex items-center gap-1.5">
+                        <RoleBadge role={xp.role ?? players[xp.id]?.role ?? "BAT"} />
                         <span
                           className="font-mono text-xs text-white hover:text-accent cursor-pointer transition-colors truncate"
-                          onClick={() => router.push(`/players/${pid}`)}
+                          onClick={() => router.push(`/players/${xp.id}`)}
                         >
-                          {players[pid]?.short_name ?? players[pid]?.name ?? pid.slice(0, 8) + "…"}
+                          {xp.short_name ?? xp.name ?? players[xp.id]?.short_name ?? players[xp.id]?.name ?? xp.id.slice(0, 8) + "…"}
                         </span>
                       </div>
                     ))}
@@ -438,14 +453,14 @@ export default function MatchPage() {
                     {match.team2_short}
                   </div>
                   <div className="space-y-1">
-                    {toArr(match.playing_xi_team2).map((pid: string) => (
-                      <div key={pid} className="flex items-center gap-1.5">
-                        <RoleBadge role={players[pid]?.role ?? "BAT"} />
+                    {normalizeXI(toArr(match.playing_xi_team2)).map((xp) => (
+                      <div key={xp.id} className="flex items-center gap-1.5">
+                        <RoleBadge role={xp.role ?? players[xp.id]?.role ?? "BAT"} />
                         <span
                           className="font-mono text-xs text-white hover:text-accent cursor-pointer transition-colors truncate"
-                          onClick={() => router.push(`/players/${pid}`)}
+                          onClick={() => router.push(`/players/${xp.id}`)}
                         >
-                          {players[pid]?.short_name ?? players[pid]?.name ?? pid.slice(0, 8) + "…"}
+                          {xp.short_name ?? xp.name ?? players[xp.id]?.short_name ?? players[xp.id]?.name ?? xp.id.slice(0, 8) + "…"}
                         </span>
                       </div>
                     ))}
@@ -492,8 +507,10 @@ export default function MatchPage() {
               <div className="font-mono text-muted text-xs py-2">
                 Available after XI confirmation
               </div>
-            ) : captains.length === 0 ? (
+            ) : !captainData ? (
               <div className="font-mono text-muted text-xs animate-pulse">Loading...</div>
+            ) : captains.length === 0 ? (
+              <div className="font-mono text-muted text-xs">No recommendations available</div>
             ) : (
               <>
                 <div className="space-y-2">
@@ -658,5 +675,6 @@ export default function MatchPage() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }

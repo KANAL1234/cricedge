@@ -117,11 +117,15 @@ export default function DashboardPage() {
               — differentials available after lineup drop
             </span>
           </div>
-        ) : differentials.length === 0 ? (
+        ) : !diffData ? (
           <div className="space-y-2">
             <SkeletonRow />
             <SkeletonRow />
             <SkeletonRow />
+          </div>
+        ) : differentials.length === 0 ? (
+          <div className="border border-border rounded p-4 font-mono text-muted text-sm">
+            NO DIFFERENTIALS AVAILABLE YET
           </div>
         ) : (
           <div className="border border-border rounded overflow-hidden">

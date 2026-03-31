@@ -160,7 +160,7 @@ async def predict_ownership(match_id: UUID, db: AsyncSession = Depends(get_db)):
         {
             "player_id": str(p.player_id),
             "name": player_map[p.player_id].name if p.player_id in player_map else None,
-            "short_name": player_map[p.player_id].name if p.player_id in player_map else None,
+            "short_name": player_map[p.player_id].short_name if p.player_id in player_map else None,
             "role": player_map[p.player_id].role.value if p.player_id in player_map and player_map[p.player_id].role else None,
             "ipl_team": player_map[p.player_id].ipl_team if p.player_id in player_map else None,
             "dream11_price": player_map[p.player_id].dream11_price if p.player_id in player_map else None,
@@ -175,6 +175,7 @@ async def predict_ownership(match_id: UUID, db: AsyncSession = Depends(get_db)):
     result = {
         "match_id": str(match_id),
         "predictions": predictions,
+        "xi_source": "xi" if match.xi_confirmed_at else "squad",
         "data_freshness": _freshness(),
     }
     await _cache_set(cache_key, result)

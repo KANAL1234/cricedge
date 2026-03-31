@@ -103,13 +103,30 @@ async def get_match(match_id: UUID, db: AsyncSession = Depends(get_db)):
 
     data = _serialize_match(match, full=True)
 
+    # Resolve playing XI UUID lists → enriched player objects
+    async def _resolve_xi(xi: list | dict) -> list | dict:
+        if not isinstance(xi, list) or not xi:
+            return xi
+        rows = await db.execute(select(Player).where(Player.id.in_(xi)))
+        player_map = {str(p.id): p for p in rows.scalars().all()}
+        return [
+            {
+                "id": pid,
+                "name": player_map[pid].name if pid in player_map else None,
+                "short_name": player_map[pid].short_name if pid in player_map else None,
+                "role": player_map[pid].role.value if pid in player_map else None,
+            }
+            for pid in xi
+        ]
+
+    data["playing_xi_team1"] = await _resolve_xi(data.get("playing_xi_team1") or [])
+    data["playing_xi_team2"] = await _resolve_xi(data.get("playing_xi_team2") or [])
+
     # Venue stats inline
     if match.venue:
         data["venue_stats"] = _serialize_venue_stats(match.venue)
 
-    # Weather placeholder — will be populated by the weather scraper cron
     data["weather"] = match.weather or {}
-
     return data
 
 

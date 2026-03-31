@@ -384,5 +384,13 @@ async def _refresh_match_data(match_id: str):
 
 
 async def _ingest_completed_match(file_path: str):
-    logger.info(f"_ingest_completed_match: processing {file_path}")
-    return {"file_path": file_path, "status": "ingested"}
+    from pathlib import Path
+    from app.core.database import AsyncSessionLocal
+    from app.scripts.ingest_cricsheet import process_file
+
+    path = Path(file_path)
+    async with AsyncSessionLocal() as db:
+        result = await process_file(db, path, fmt=None)
+        await db.commit()
+    logger.info(f"_ingest_completed_match: {file_path} → {result}")
+    return result

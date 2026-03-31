@@ -4,6 +4,8 @@ import { useState } from "react";
 
 interface CaptainRec {
   player_id: string;
+  name?: string | null;
+  short_name?: string | null;
   predicted_ownership: number;
   ev_score: number;
   captain_score: number;
@@ -57,7 +59,7 @@ export default function CaptainPicker({ recommendations }: CaptainPickerProps) {
             </span>
             <div className="flex-1 min-w-0">
               <div className="font-mono text-white text-sm font-semibold truncate">
-                {rec.player_id.slice(0, 8)}…
+                {rec.short_name ?? rec.name ?? rec.player_id.slice(0, 8) + "…"}
               </div>
               <div className="font-mono text-muted text-xs truncate">{rec.rationale}</div>
             </div>

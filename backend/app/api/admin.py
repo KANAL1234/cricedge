@@ -185,6 +185,15 @@ async def trigger_sync_xi(match_id: str):
         svc = DataSyncService(db)
         result = await svc.sync_match_playing_xi(match_id_int)
 
+    # Broadcast XI update so connected clients receive it immediately
+    if result.get("confirmed") or result.get("synced"):
+        from app.tasks.scrape_tasks import _broadcast_xi_update
+        import asyncio
+        try:
+            asyncio.create_task(_broadcast_xi_update(match_id, "both"))
+        except RuntimeError:
+            pass  # no running loop outside async context
+
     return {"match_id": match_id, "result": result}
 
 
