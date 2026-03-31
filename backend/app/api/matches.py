@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
-from typing import Optional
+from uuid import UUID, UUID as _UUID
+from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_, and_
@@ -13,6 +13,32 @@ from app.models.player import Player
 from app.models.venue import Venue
 
 router = APIRouter()
+
+
+async def _enrich_xi(xi: Any, db: AsyncSession) -> list:
+    """Resolve a playing XI value (UUID string list, dict, or None) to enriched player objects."""
+    if not isinstance(xi, list) or not xi:
+        return []
+    # Safely coerce string UUIDs to uuid.UUID objects for SQLAlchemy Uuid column
+    uuid_objs = []
+    for item in xi:
+        try:
+            uuid_objs.append(_UUID(str(item)))
+        except (ValueError, AttributeError):
+            pass
+    if not uuid_objs:
+        return []
+    rows = await db.execute(select(Player).where(Player.id.in_(uuid_objs)))
+    player_map = {str(p.id): p for p in rows.scalars().all()}
+    return [
+        {
+            "id": str(item),
+            "name": player_map.get(str(item), None) and player_map[str(item)].name,
+            "short_name": player_map.get(str(item), None) and player_map[str(item)].short_name,
+            "role": player_map[str(item)].role.value if str(item) in player_map else None,
+        }
+        for item in xi
+    ]
 
 
 @router.get("")
@@ -103,24 +129,9 @@ async def get_match(match_id: UUID, db: AsyncSession = Depends(get_db)):
 
     data = _serialize_match(match, full=True)
 
-    # Resolve playing XI UUID lists → enriched player objects
-    async def _resolve_xi(xi: list | dict) -> list | dict:
-        if not isinstance(xi, list) or not xi:
-            return xi
-        rows = await db.execute(select(Player).where(Player.id.in_(xi)))
-        player_map = {str(p.id): p for p in rows.scalars().all()}
-        return [
-            {
-                "id": pid,
-                "name": player_map[pid].name if pid in player_map else None,
-                "short_name": player_map[pid].short_name if pid in player_map else None,
-                "role": player_map[pid].role.value if pid in player_map else None,
-            }
-            for pid in xi
-        ]
-
-    data["playing_xi_team1"] = await _resolve_xi(data.get("playing_xi_team1") or [])
-    data["playing_xi_team2"] = await _resolve_xi(data.get("playing_xi_team2") or [])
+    # Resolve playing XI: UUID string list → enriched player objects
+    data["playing_xi_team1"] = await _enrich_xi(match.playing_xi_team1, db)
+    data["playing_xi_team2"] = await _enrich_xi(match.playing_xi_team2, db)
 
     # Venue stats inline
     if match.venue:
@@ -140,32 +151,12 @@ async def get_playing_xi(match_id: UUID, db: AsyncSession = Depends(get_db)):
     team1_data = match.playing_xi_team1 or {}
     team2_data = match.playing_xi_team2 or {}
 
-    # Resolve UUID lists → enriched player objects
-    async def _enrich(xi: list | dict) -> list | dict:
-        if not isinstance(xi, list):
-            return xi  # already a dict with names from pre-match XI
-        if not xi:
-            return []
-        rows = await db.execute(
-            select(Player).where(Player.id.in_(xi))
-        )
-        player_map = {str(p.id): p for p in rows.scalars().all()}
-        return [
-            {
-                "id": pid,
-                "name": player_map[pid].name if pid in player_map else None,
-                "short_name": player_map[pid].short_name if pid in player_map else None,
-                "role": player_map[pid].role.value if pid in player_map else None,
-            }
-            for pid in xi
-        ]
-
     return {
         "match_id": str(match_id),
         "xi_confirmed": match.xi_confirmed_at is not None,
         "xi_confirmed_at": match.xi_confirmed_at,
-        "playing_xi_team1": await _enrich(team1_data),
-        "playing_xi_team2": await _enrich(team2_data),
+        "playing_xi_team1": await _enrich_xi(team1_data, db),
+        "playing_xi_team2": await _enrich_xi(team2_data, db),
     }
 
 
