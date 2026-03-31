@@ -238,22 +238,24 @@ class CricbuzzClient:
         )
 
     async def get_recent_matches(self) -> Any:
-        """matches/v1/recent — live + completed matches with scores. TTL 30min."""
+        """matches/v1/recent — live + completed matches with scores. TTL 10min."""
         return await self._cached_fetch(
             "matches/v1/recent",
             cache_key="cricbuzz:matches:recent",
-            ttl=30 * 60,
+            ttl=10 * 60,
         )
 
-    # get_match_squads — playing XI from in-progress matches (no static endpoint)
+    async def get_match_playing11(self, match_id: int) -> Any:
+        """mcenter/v1/{matchId}/playing11 — confirmed playing XI. TTL 10min."""
+        return await self._cached_fetch(
+            f"mcenter/v1/{match_id}/playing11",
+            cache_key=f"cricbuzz:match:{match_id}:playing11",
+            ttl=10 * 60,
+        )
+
+    # get_match_squads — kept for compatibility, delegates to playing11
     async def get_match_squads(self, match_id: int) -> Any:
-        cache_key = f"cricbuzz:match:{match_id}:squads"
-        cached = await self._get_cache(cache_key)
-        if cached is not None:
-            return cached
-        # No static playing XI endpoint on this plan — return empty
-        # Real XI updates come via score endpoints during live match window
-        return {}
+        return await self.get_match_playing11(match_id)
 
     async def get_player_career(self, player_id: int) -> Any:
         """Alias for get_player_batting (career stats are embedded there)."""

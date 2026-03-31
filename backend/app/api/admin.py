@@ -186,3 +186,16 @@ async def trigger_sync_xi(match_id: str):
         result = await svc.sync_match_playing_xi(match_id_int)
 
     return {"match_id": match_id, "result": result}
+
+
+@router.post("/sync/results")
+async def trigger_sync_results():
+    """Manually trigger match results sync (updates completed match statuses + winners)."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.data_sync import DataSyncService
+
+    async with AsyncSessionLocal() as db:
+        svc = DataSyncService(db)
+        result = await svc.sync_match_results()
+
+    return {"result": result}

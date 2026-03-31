@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.match import Match, MatchStatus, MatchFormat
+from app.models.player import Player
 from app.models.venue import Venue
 
 router = APIRouter()
@@ -118,12 +119,36 @@ async def get_playing_xi(match_id: UUID, db: AsyncSession = Depends(get_db)):
     match = result.scalar_one_or_none()
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
+
+    team1_data = match.playing_xi_team1 or {}
+    team2_data = match.playing_xi_team2 or {}
+
+    # Resolve UUID lists → enriched player objects
+    async def _enrich(xi: list | dict) -> list | dict:
+        if not isinstance(xi, list):
+            return xi  # already a dict with names from pre-match XI
+        if not xi:
+            return []
+        rows = await db.execute(
+            select(Player).where(Player.id.in_(xi))
+        )
+        player_map = {str(p.id): p for p in rows.scalars().all()}
+        return [
+            {
+                "id": pid,
+                "name": player_map[pid].name if pid in player_map else None,
+                "short_name": player_map[pid].short_name if pid in player_map else None,
+                "role": player_map[pid].role.value if pid in player_map else None,
+            }
+            for pid in xi
+        ]
+
     return {
-        "match_id": match_id,
+        "match_id": str(match_id),
         "xi_confirmed": match.xi_confirmed_at is not None,
         "xi_confirmed_at": match.xi_confirmed_at,
-        "playing_xi_team1": match.playing_xi_team1,
-        "playing_xi_team2": match.playing_xi_team2,
+        "playing_xi_team1": await _enrich(team1_data),
+        "playing_xi_team2": await _enrich(team2_data),
     }
 
 

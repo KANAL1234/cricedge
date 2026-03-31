@@ -135,6 +135,12 @@ class DataSyncService:
                     if venue_cb_id and existing.venue_cricbuzz_id != venue_cb_id:
                         existing.venue_cricbuzz_id = venue_cb_id
                         changed = True
+                    if existing.status != status:
+                        existing.status = status
+                        changed = True
+                    if match_start_utc and existing.match_start_utc != match_start_utc:
+                        existing.match_start_utc = match_start_utc
+                        changed = True
                     if changed:
                         updated_count += 1
                     else:
@@ -666,6 +672,15 @@ class DataSyncService:
         updated = 0
         skipped = 0
 
+        from app.models.match import MatchStatus
+
+        state_map = {
+            "complete": MatchStatus.COMPLETED,
+            "in progress": MatchStatus.LIVE,
+            "live": MatchStatus.LIVE,
+            "toss": MatchStatus.LIVE,
+        }
+
         for type_match in data.get("typeMatches", []):
             for sm in type_match.get("seriesMatches", []):
                 saw = sm.get("seriesAdWrapper", {})
@@ -673,20 +688,14 @@ class DataSyncService:
                     continue
                 for m in saw.get("matches", []):
                     mi = m.get("matchInfo", {})
-                    if mi.get("state") != "Complete":
-                        continue
-                    match_id = str(mi.get("matchId", ""))
-                    status_text = mi.get("status", "")  # e.g. "Mumbai Indians won by 6 wkts"
-                    if not match_id or not status_text:
-                        continue
+                    raw_state = mi.get("state", "").lower()
+                    new_status = state_map.get(raw_state)
+                    if new_status is None:
+                        continue  # upcoming/unknown — schedule sync handles those
 
-                    # Determine winner from status text
-                    winner = ""
-                    for team_key in ("team1", "team2"):
-                        team_name = mi.get(team_key, {}).get("teamName", "")
-                        if team_name and team_name in status_text:
-                            winner = team_name
-                            break
+                    match_id = str(mi.get("matchId", ""))
+                    if not match_id:
+                        continue
 
                     result = await self.db.execute(
                         select(Match).where(Match.cricbuzz_id == match_id)
@@ -696,21 +705,37 @@ class DataSyncService:
                         skipped += 1
                         continue
 
-                    if match.winner and match.result and match.xi_confirmed_at:
+                    changed = False
+
+                    if match.status != new_status:
+                        match.status = new_status
+                        changed = True
+
+                    if new_status == MatchStatus.COMPLETED:
+                        status_text = mi.get("status", "")
+                        winner = ""
+                        for team_key in ("team1", "team2"):
+                            team_name = mi.get(team_key, {}).get("teamName", "")
+                            if team_name and team_name in status_text:
+                                winner = team_name
+                                break
+                        if status_text and match.result != status_text:
+                            match.result = status_text
+                            changed = True
+                        if winner and match.winner != winner:
+                            match.winner = winner
+                            changed = True
+                        # Sync scorecard (actual XI) if not yet captured
+                        if not match.xi_confirmed_at:
+                            try:
+                                await self.sync_match_scorecard(int(match_id))
+                            except Exception as e:
+                                logger.warning(f"scorecard sync failed for {match_id}: {e}")
+
+                    if changed:
+                        updated += 1
+                    else:
                         skipped += 1
-                        continue
-
-                    match.winner = winner
-                    match.result = status_text
-                    match.status = "COMPLETED"
-                    updated += 1
-
-                    # Sync scorecard (actual XI) if not yet captured
-                    if not match.xi_confirmed_at:
-                        try:
-                            await self.sync_match_scorecard(int(match_id))
-                        except Exception as e:
-                            logger.warning(f"scorecard sync failed for {match_id}: {e}")
 
         await self.db.commit()
         logger.info(f"sync_match_results: {updated} updated, {skipped} skipped")
@@ -748,6 +773,10 @@ class DataSyncService:
             if time_to_match > 4 * 3600:
                 return {"skipped": True, "reason": "too_early", "hours_to_match": round(time_to_match / 3600, 1)}
 
+        # For live/in-progress matches the scorecard already has full player data
+        if match.status and match.status.value in ("live", "completed"):
+            return await self.sync_match_scorecard(match_id)
+
         data = await self.client.get_match_squads(match_id)
         xi_team1, xi_team2 = self._extract_playing_xi(data)
 
@@ -762,14 +791,24 @@ class DataSyncService:
         return {"confirmed": False, "match_id": match_id}
 
     def _extract_playing_xi(self, data: Any) -> tuple[dict, dict]:
-        """Extract playing XI from match squads response."""
+        """Extract playing XI from match squads / playing11 response."""
         team1: dict = {}
         team2: dict = {}
-        if isinstance(data, dict):
-            teams = data.get("teams", data.get("teamSquads", []))
-            if isinstance(teams, list) and len(teams) >= 2:
-                team1 = self._parse_xi_players(teams[0])
-                team2 = self._parse_xi_players(teams[1])
+        if not isinstance(data, dict):
+            return team1, team2
+
+        # mcenter/v1/{matchId}/playing11 shape:
+        # {"team1": {"players": [...]}, "team2": {"players": [...]}}
+        if "team1" in data and "team2" in data:
+            team1 = self._parse_xi_players(data["team1"])
+            team2 = self._parse_xi_players(data["team2"])
+            return team1, team2
+
+        # series squads shape: {"teams": [...]} or {"teamSquads": [...]}
+        teams = data.get("teams", data.get("teamSquads", []))
+        if isinstance(teams, list) and len(teams) >= 2:
+            team1 = self._parse_xi_players(teams[0])
+            team2 = self._parse_xi_players(teams[1])
         return team1, team2
 
     def _parse_xi_players(self, team_data: dict) -> dict:

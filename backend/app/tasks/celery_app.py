@@ -44,10 +44,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/5", hour="8-15"),
     },
 
-    # Match results: every 30 min during match hours (1 API call, cached 30 min)
+    # Match results: every 5 min during match hours (cached 10 min — ~1 real call/10 min)
+    # Extended window: 8 AM–7 PM UTC = 1:30 PM–12:30 AM IST, covers late finishes
     "sync-match-results": {
         "task": "app.tasks.scrape_tasks.sync_match_results_task",
-        "schedule": crontab(minute="*/30", hour="8-18"),
+        "schedule": crontab(minute="*/5", hour="8-19"),
     },
 
     # Player stats batch: daily at 7 AM IST (1:30 UTC) — up to 20 API calls
