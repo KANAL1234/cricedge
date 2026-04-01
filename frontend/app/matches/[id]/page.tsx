@@ -170,23 +170,23 @@ export default function MatchPage() {
   }, [id, markXIConfirmed, matchSWRKey]);
 
   // Pre-fetch player names for ownership list + XI players
+  // fetchPlayer has an internal guard so we don't need `players` as a dep —
+  // including it causes an infinite loop (players update → effect re-fires → repeat).
   useEffect(() => {
     const ids: string[] = [];
     ownershipData?.predictions?.forEach((p: any) => { if (p.player_id) ids.push(p.player_id); });
     normalizeXI(toArr(match?.playing_xi_team1)).forEach((p) => { if (p.id && !p.name) ids.push(p.id); });
     normalizeXI(toArr(match?.playing_xi_team2)).forEach((p) => { if (p.id && !p.name) ids.push(p.id); });
-    ids.forEach((id) => { if (!players[id]) fetchPlayer(id); });
-  }, [ownershipData, match?.playing_xi_team1, match?.playing_xi_team2, players, fetchPlayer]);
+    ids.forEach(fetchPlayer);
+  }, [ownershipData, match?.playing_xi_team1, match?.playing_xi_team2, fetchPlayer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-fetch captain player names
   useEffect(() => {
     if (!captainData) return;
     [...(captainData.captain ?? []), ...(captainData.vice_captain ?? [])].forEach(
-      (r: any) => {
-        if (r.player_id && !players[r.player_id]) fetchPlayer(r.player_id);
-      }
+      (r: any) => { if (r.player_id) fetchPlayer(r.player_id); }
     );
-  }, [captainData, players, fetchPlayer]);
+  }, [captainData, fetchPlayer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleSort(col: string) {
     if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
