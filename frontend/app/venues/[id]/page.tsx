@@ -227,15 +227,93 @@ export default function VenuePage() {
         )}
       </div>
 
-      {/* ── Extra Stats from /stats endpoint ── */}
+      {/* ── Detailed Stats from /stats endpoint ── */}
       {statsData && (
-        <div className="border border-border rounded p-4 space-y-2">
+        <div className="border border-border rounded p-4 space-y-4">
           <div className="font-mono text-xs text-muted tracking-widest">
             DETAILED STATS (T20)
           </div>
-          <pre className="font-mono text-xs text-muted overflow-x-auto">
-            {JSON.stringify(statsData, null, 2).slice(0, 600)}
-          </pre>
+
+          {/* Scoring patterns */}
+          {statsData.scoring_patterns && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-surface border border-border rounded p-3">
+                <div className="font-mono text-[10px] text-muted">AVG 1ST INN</div>
+                <div className="font-mono text-accent text-xl font-semibold">
+                  {statsData.scoring_patterns.avg_first_innings?.toFixed(0) ?? "—"}
+                </div>
+              </div>
+              <div className="bg-surface border border-border rounded p-3">
+                <div className="font-mono text-[10px] text-muted">AVG 2ND INN</div>
+                <div className="font-mono text-info text-xl font-semibold">
+                  {statsData.scoring_patterns.avg_second_innings?.toFixed(0) ?? "—"}
+                </div>
+              </div>
+              <div className="bg-surface border border-border rounded p-3">
+                <div className="font-mono text-[10px] text-muted">MATCHES</div>
+                <div className="font-mono text-white text-xl font-semibold">
+                  {statsData.scoring_patterns.matches_sampled ?? "—"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pace vs Spin raw counts */}
+          {statsData.pace_vs_spin && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-surface border border-border rounded p-3 flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
+                <div>
+                  <div className="font-mono text-[10px] text-muted">PACE WICKETS</div>
+                  <div className="font-mono text-accent text-sm font-semibold">
+                    {statsData.pace_vs_spin.pace_wickets ?? 0}
+                    {statsData.pace_vs_spin.pace_pct != null && (
+                      <span className="text-muted text-[10px] ml-1">
+                        ({statsData.pace_vs_spin.pace_pct.toFixed(0)}%)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-surface border border-border rounded p-3 flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-info shrink-0" />
+                <div>
+                  <div className="font-mono text-[10px] text-muted">SPIN WICKETS</div>
+                  <div className="font-mono text-info text-sm font-semibold">
+                    {statsData.pace_vs_spin.spin_wickets ?? 0}
+                    {statsData.pace_vs_spin.spin_pct != null && (
+                      <span className="text-muted text-[10px] ml-1">
+                        ({statsData.pace_vs_spin.spin_pct.toFixed(0)}%)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Dew + pitch */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="bg-surface border border-border rounded px-3 py-2 flex items-center gap-2">
+              <span className="font-mono text-[10px] text-muted">PITCH</span>
+              <span className={cn(
+                "font-mono text-xs font-semibold border px-1.5 py-0.5 rounded",
+                PITCH_STYLES[(statsData.pitch_type?.toUpperCase() ?? "BALANCED")] ?? PITCH_STYLES.BALANCED
+              )}>
+                {statsData.pitch_type?.toUpperCase() ?? "—"}
+              </span>
+            </div>
+            <div className="bg-surface border border-border rounded px-3 py-2 flex items-center gap-2">
+              <span className="font-mono text-[10px] text-muted">DEW FACTOR</span>
+              <span className={cn(
+                "font-mono text-xs font-semibold",
+                statsData.dew_factor ? "text-warning" : "text-muted"
+              )}>
+                {statsData.dew_factor ? "YES" : "NO"}
+              </span>
+            </div>
+            <span className="font-mono text-[10px] text-muted">FORMAT: {statsData.format}</span>
+          </div>
         </div>
       )}
     </div>
