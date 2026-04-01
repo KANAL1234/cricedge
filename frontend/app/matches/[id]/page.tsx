@@ -75,17 +75,18 @@ function FormDots({ innings }: { innings: number[] }) {
 }
 
 function CountdownTimer({ targetUtc }: { targetUtc: string }) {
-  const [secs, setSecs] = useState(() =>
-    differenceInSeconds(parseISO(targetUtc), new Date())
-  );
+  // Start null to avoid SSR/client hydration mismatch (new Date() differs server vs client)
+  const [secs, setSecs] = useState<number | null>(null);
 
   useEffect(() => {
+    setSecs(differenceInSeconds(parseISO(targetUtc), new Date()));
     const iv = setInterval(() => {
       setSecs(differenceInSeconds(parseISO(targetUtc), new Date()));
     }, 1000);
     return () => clearInterval(iv);
   }, [targetUtc]);
 
+  if (secs === null) return null;
   if (secs <= 0) return <span className="text-danger font-mono text-xs">LOCKED</span>;
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
@@ -99,6 +100,17 @@ function CountdownTimer({ targetUtc }: { targetUtc: string }) {
 }
 
 type SortDir = "asc" | "desc";
+
+// Defined outside MatchPage so React sees a stable component type across renders.
+// Defining inside MatchPage causes React to unmount/remount it on every render.
+function SortIcon({ col, sortCol, sortDir }: { col: string; sortCol: string; sortDir: SortDir }) {
+  if (sortCol !== col) return <ChevronDown size={10} className="text-border" />;
+  return sortDir === "asc" ? (
+    <ChevronUp size={10} className="text-accent" />
+  ) : (
+    <ChevronDown size={10} className="text-accent" />
+  );
+}
 
 export default function MatchPage() {
   const { id } = useParams<{ id: string }>();
@@ -193,28 +205,23 @@ export default function MatchPage() {
     else { setSortCol(col); setSortDir("desc"); }
   }
 
-  function SortIcon({ col }: { col: string }) {
-    if (sortCol !== col) return <ChevronDown size={10} className="text-border" />;
-    return sortDir === "asc" ? (
-      <ChevronUp size={10} className="text-accent" />
-    ) : (
-      <ChevronDown size={10} className="text-accent" />
-    );
-  }
-
   if (matchLoading && !match) {
     return (
-      <div className="flex items-center justify-center h-64 font-mono text-muted text-sm animate-pulse">
-        LOADING MATCH DATA...
-      </div>
+      <ErrorBoundary>
+        <div className="flex items-center justify-center h-64 font-mono text-muted text-sm animate-pulse">
+          LOADING MATCH DATA...
+        </div>
+      </ErrorBoundary>
     );
   }
 
   if (!match) {
     return (
-      <div className="flex items-center justify-center h-64 font-mono text-danger text-sm">
-        MATCH NOT FOUND
-      </div>
+      <ErrorBoundary>
+        <div className="flex items-center justify-center h-64 font-mono text-danger text-sm">
+          MATCH NOT FOUND
+        </div>
+      </ErrorBoundary>
     );
   }
 
@@ -617,7 +624,7 @@ export default function MatchPage() {
                     >
                       <div className="flex items-center gap-1">
                         {label}
-                        <SortIcon col={key} />
+                        <SortIcon col={key} sortCol={sortCol} sortDir={sortDir} />
                       </div>
                     </th>
                   ))}
